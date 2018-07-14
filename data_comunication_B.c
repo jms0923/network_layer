@@ -52,12 +52,9 @@ static int dest_address = 0x11;
 static int isConnected = 0;
 static int source_sequence = 0;
 static int dest_sequence = 0;
-static int sabm_req = 0; // to identigy whether or not u-frame(SABM) is forwarded to destination
-static int disc_req = 0; // to identify whether or not u-frame(disc) is forwarded to destination
 
 int main (void)
 {
-
 	char input[MAX_SIZE];
 	int length;
 	pthread_t tid;
@@ -66,7 +63,7 @@ int main (void)
 	pthread_create(&tid, NULL, do_thread, (void *)0);
 
 	do {
-		printf("Input message to send : \n");
+		printf("\nInput message to send : \n");
 		scanf("%s",input);
 
 		length = strlen(input);
@@ -150,21 +147,60 @@ void data_send(char *data, int length)
 	
 	// if connection is not established, send U-FRAME(SABM)
 		// initialize the U-FRAME(SABM)
-	struct U_FRAME SABM;
-	SABM.start_flag = 01111110;
-	SABM.address =0x11;
-	SABM.control[0] = 11;
-	SABM.control[1] = 11;
-	SABM.control[2] = 0;
-	SABM.control[3] = 100;
-	SABM.mg_info[0] = '0';
-	SABM.fcs = 0;
-	SABM.end_flag = 01111110;
-	// if connection is established, send I-FRAME(data)
-		// initialize the I-FRAME(data)
+	if(isConnected == 0){
+		printf("connection is not established, send U-FRAME(SABM)\n");
+		struct U_FRAME SABM;
+		SABM.start_flag = 01111110;
+		SABM.address = dest_address;
+		SABM.control[0] = 11;
+		SABM.control[1] = 11;
+		SABM.control[2] = 0;
+		SABM.control[3] = 100;
+		SABM.mg_info[0] = '0';
+		SABM.fcs = 0;
+		SABM.end_flag = 01111110;
+		length = sizeof(SABM);
+		memcpy(temp, (void *)&SABM, length);
+	}
 
 	// if connection is established && strcmp(data, "close") == 0, send U-frame(DISC)
 		// initialize the U-frame(DISC)
+	else if(isConnected == 1 && strcmp(data, "close") == 0){
+		printf("disconnetion is requested, send the U-Frame(DISC)\n");
+		struct U_FRAME DISC;
+		DISC.start_flag = 01111110;
+		DISC.address = dest_address;
+		DISC.control[0] = 11;
+		DISC.control[1] = 00;
+		DISC.control[2] = 0;
+		DISC.control[3] = 010;
+		DISC.mg_info[0] = '0';
+		DISC.fcs = 0;
+		DISC.end_flag = 01111110;
+		length = sizeof(DISC);
+		memcpy(temp, (void *)&DISC, length);
+	}
+	
+	// if connection is established, send I-FRAME(data)
+		// initialize the I-FRAME(data)
+	else if(isConnected == 1){
+		struct I_FRAME i_frame;
+		i_frame.start_flag = 01111110;
+		i_frame.address = dest_address;
+		i_frame.control[0] = 0;
+		i_frame.control[1] = source_sequence;
+		i_frame.control[2] = 0;
+		i_frame.control[3] = dest_sequence;
+		// i_frame.data = data;
+		strcpy(i_frame.data, data);
+		i_frame.fcs = 0;
+		i_frame.end_flag = 01111110;
+		
+		printf("send I-FRAME(data), data frame %d\n", source_sequence);
+		source_sequence++;
+		length = sizeof(i_frame);
+		memcpy(temp, &i_frame, length);
+	}
 
 	if(sendto (sndsock, temp, length, 0, (struct sockaddr *)&s_addr,sizeof(s_addr)) <= 0)
 	{
@@ -175,6 +211,8 @@ void data_send(char *data, int length)
 
 void data_receive(int *length)
 {
+	char s_data[M_SIZE];
+	char temp[MAX_SIZE];
 	char* data = (char*)malloc(MAX_SIZE);
 	char rec_buffer[MAX_SIZE];
 	int r_length = 0;
@@ -190,8 +228,7 @@ void data_receive(int *length)
 	}
 
 	memcpy(data,rec_buffer,MAX_SIZE);
-
-	printf("%s\n",data);
+	memset(temp, 0x00, MAX_SIZE);
 
 	// decalsulate the flag field
 	memcpy(&flag, data, sizeof(flag));
@@ -206,30 +243,116 @@ void data_receive(int *length)
 	// decalsulate the control field
 	memcpy(&control[0], data, sizeof(control[0]));
 	data += sizeof(control[0]);
-	printf("control[0] : %d",control[0]);
+
 	memcpy(&control[1], data, sizeof(control[1]));
 	data += sizeof(control[1]);
-	printf("control[1] : %d",control[1]);
+
 	// discard the dirty bit
 	memcpy(&control[2], data, sizeof(control[2]));
 	data += sizeof(control[2]);
-	printf("control[2] : %d",control[2]);
+
 	memcpy(&control[3], data, sizeof(control[3]));
 	data += sizeof(control[3]);
-	printf("control[3] : %d",control[3]);	
+	//printf("control[3] : %d",control[3]);	
 	if(control[0] == 11){ // if(U-frame)
 		if(control[1] == 11 && control[3] == 100){ // received SABM
 			// reply UA frame
+			printf("received frame type : U-frame(SABM)\n");
+			isConnected = 1;
+			struct U_FRAME UA;
+			UA.start_flag = 01111110;
+			UA.address = dest_address;
+			UA.control[0] = 11;
+			UA.control[1] = 00;
+			UA.control[2] = 0;
+			UA.control[3] = 110;
+			UA.mg_info[0] = '0';
+			UA.fcs = 0;
+			UA.end_flag = 01111110;
+			
+			printf("connection is established\n");
+			printf("reply the U-Frame(UA)\n\n");
+			s_length = sizeof(UA);
+			memcpy(data, (void *)&UA, s_length);
+			
+			if(sendto (sndsock, data, s_length, 0, (struct sockaddr *)&s_addr,sizeof(s_addr)) <= 0)
+			{
+				perror("send error : ");
+				exit(1);
+			}
 		}
 		else if(control[1] == 00 && control[3] == 010){ //received DISC
 			// reply UA frame
+			printf("received frame type : U-frame(DISC)\n");
+			isConnected = 0;
+			struct U_FRAME UA;
+			UA.start_flag = 01111110;
+			UA.address = dest_address;
+			UA.control[0] = 11;
+			UA.control[1] = 00;
+			UA.control[2] = 0;
+			UA.control[3] = 110;
+			UA.mg_info[0] = '0';
+			UA.fcs = 0;
+			UA.end_flag = 01111110;
+			
+			s_length = sizeof(UA);
+			memcpy(data, (void *)&UA, s_length);
+			printf("reply the U-Frame(UA)\n");
+			printf("successfully disconneted with destination\n\n");
+			
+			if(sendto (sndsock, data, s_length, 0, (struct sockaddr *)&s_addr,sizeof(s_addr)) <= 0)
+			{
+				perror("send error : ");
+				exit(1);
+			}
+		}
+		else if(control[1] == 00 && control[3] == 110 && isConnected == 1){	// received UA (be asked disconneted)
+			isConnected = 0;
+			printf("received fram type : u-frame(UA)\n");
+			printf("successfully disconneted with destination\n\n");
+		}
+		else if(control[1] == 00 && control[3] == 110 && isConnected == 0){	// received UA (be asked conneted)
+			isConnected = 1;
+			printf("received fram type : u-frame(UA)\n");
+			printf("connetion is established\n\n");
 		}
 	}
+	
 	else if(control[0] == 0){ // if(I-frame)
 		// reply RR frame
+		
+		printf("received frame type : I-frame(data frame : %d)\n", control[1]);
+		// have to print data 
+		memcpy(s_data, data, sizeof(s_data));
+		data += sizeof(s_data);
+		printf("requested next packet sequence number : %d\n", source_sequence);
+		printf("received message : %s\n", s_data);
+		dest_sequence++;
+		struct S_FRAME RR;
+		RR.start_flag = 01111110;
+		RR.address = dest_address;
+		RR.control[0] = 10;
+		RR.control[1] = 00;
+		RR.control[2] = 0;
+		RR.control[3] = dest_sequence;
+		RR.fcs = 0;
+		RR.end_flag = 01111110;
+		
+		printf("send the S-frame(RR)\n\n");
+		s_length = sizeof(RR);
+		memcpy(data, (void *)&RR, s_length);
+		
+		if(sendto (sndsock, data, s_length, 0, (struct sockaddr *)&s_addr,sizeof(s_addr)) <= 0)
+		{
+			perror("send error : ");
+			exit(1);
+		}
 	}
-	
-	else if(control[0] == 10 && control[1] == 0){ // if(S-frame)
+	else if(control[0] == 10 && control[1] == 00){ // if(S-frame(RR))
+		dest_sequence++;
+		printf("received frame type : S-frame(RR)\n");
+		printf("requested next packet sequence number : %d\n\n", control[3]);
 	}
 }
 
