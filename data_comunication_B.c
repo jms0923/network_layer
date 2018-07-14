@@ -150,7 +150,16 @@ void data_send(char *data, int length)
 	
 	// if connection is not established, send U-FRAME(SABM)
 		// initialize the U-FRAME(SABM)
-
+	struct U_FRAME SABM;
+	SABM.start_flag = 01111110;
+	SABM.address =0x11;
+	SABM.control[0] = 11;
+	SABM.control[1] = 11;
+	SABM.control[2] = 0;
+	SABM.control[3] = 100;
+	SABM.mg_info[0] = '0';
+	SABM.fcs = 0;
+	SABM.end_flag = 01111110;
 	// if connection is established, send I-FRAME(data)
 		// initialize the I-FRAME(data)
 
@@ -185,40 +194,42 @@ void data_receive(int *length)
 	printf("%s\n",data);
 
 	// decalsulate the flag field
-	// memcpy(&flag, data, sizeof(flag));
-	// data += sizeof(flag);
+	memcpy(&flag, data, sizeof(flag));
+	data += sizeof(flag);
 	
 	// decalsulate the address field
-	// memcpy(&address, data, sizeof(address));
-	// data += sizeof(address);
+	memcpy(&address, data, sizeof(address));
+	data += sizeof(address);
  
-	// printf("packet received (address: %d)\n", address);	
+	printf("packet received (address: %d)\n", address);	
 	
 	// decalsulate the control field
-	// memcpy(&control[0], data, sizeof(control[0]));
-	// data += sizeof(control[0]);
-	
-	// memcpy(&control[1], data, sizeof(control[1]));
-	// data += sizeof(control[1]);
-	
+	memcpy(&control[0], data, sizeof(control[0]));
+	data += sizeof(control[0]);
+	printf("control[0] : %d",control[0]);
+	memcpy(&control[1], data, sizeof(control[1]));
+	data += sizeof(control[1]);
+	printf("control[1] : %d",control[1]);
 	// discard the dirty bit
-	// memcpy(&control[2], data, sizeof(control[2]));
-	// data += sizeof(control[2]);
-
-	// memcpy(&control[3], data, sizeof(control[3]));
-	// data += sizeof(control[3]);
-		
-	// if(control[0] == 11) // if(U-frame)
-		// if(control[1] == 11 && control[3] == 100) // received SABM
+	memcpy(&control[2], data, sizeof(control[2]));
+	data += sizeof(control[2]);
+	printf("control[2] : %d",control[2]);
+	memcpy(&control[3], data, sizeof(control[3]));
+	data += sizeof(control[3]);
+	printf("control[3] : %d",control[3]);	
+	if(control[0] == 11){ // if(U-frame)
+		if(control[1] == 11 && control[3] == 100){ // received SABM
 			// reply UA frame
-		// else if(control[1] == 00 && control[3] == 010) //received DISC
+		}
+		else if(control[1] == 00 && control[3] == 010){ //received DISC
 			// reply UA frame
-	
-	// else if(control[0] == 0) // if(I-frame)
+		}
+	}
+	else if(control[0] == 0){ // if(I-frame)
 		// reply RR frame
-				
+	}
 	
-	// else if(control[0] == 10 && control[1] == 0) // if(S-frame)
-
+	else if(control[0] == 10 && control[1] == 0){ // if(S-frame)
+	}
 }
 
